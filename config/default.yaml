@@ -1,0 +1,52 @@
+# Default configuration for the Gray-Scott inverse parameter predictor.
+# All paths, hyperparameters, and switches live here; override via CLI args
+# in the scripts under scripts/.
+
+paths:
+  hdf5_path: "data/grayscott_64x64_1-1000.hdf5"
+  cache_dir: "data/cache"
+  checkpoint_dir: "checkpoints"
+
+# Fixed diffusion constants -- not predicted by the model.
+simulator:
+  du: 0.16
+  dv: 0.08
+  size: 64
+  iterations: 1000
+  patch_radius: 2
+  patch_prob: 0.5
+
+# Dataset generation
+data:
+  seeds_per_param: 5
+  val_fraction: 0.2
+  split_seed: 42
+  # If true, regenerate samples on-the-fly each epoch instead of using the cache.
+  on_the_fly: false
+
+# Model
+model:
+  # One of: "cnn", "vit"
+  name: "cnn"
+  in_chans: 3
+  num_outputs: 2
+
+# Training
+train:
+  epochs: 50
+  batch_size: 32
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  num_workers: 2
+  log_csv: "checkpoints/train_log.csv"
+
+# Global RNG seed (for split, model init, etc. -- distinct from per-sample
+# simulation seeds which are drawn randomly during dataset generation).
+seed: 42
+
+# Weights & Biases experiment tracking
+wandb:
+  enabled: false
+  project: "gray-scott-inverse"
+  entity: null     # your wandb username/team, or null for the default
+  run_name: null   # null = wandb auto-generates a name

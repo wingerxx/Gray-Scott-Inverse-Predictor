@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gsinverse"
+version = "0.1.0"
+description = "Inverse parameter predictor for the Gray-Scott reaction-diffusion model"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "torch",
+    "timm",
+    "h5py",
+    "numpy",
+    "matplotlib",
+    "scikit-learn",
+    "pyyaml",
+    "tqdm",
+    "wandb",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
