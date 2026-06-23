@@ -7,12 +7,13 @@ Usage:
 """
 
 import argparse
+import os
 
 import numpy as np
 
-from gsinverse.dataset import build_train_val_datasets
+from gsinverse.dataset import build_train_val_datasets, split_pairs
 from gsinverse.train import train
-from gsinverse.utils import load_config, set_global_seed
+from gsinverse.utils import TargetScaler, load_config, set_global_seed
 
 
 def main():
@@ -32,7 +33,22 @@ def main():
     set_global_seed(config["seed"])
 
     fk_pairs = [tuple(p) for p in np.load(args.fk_pairs)]
-    train_dataset, val_dataset = build_train_val_datasets(fk_pairs, config)
+
+    # Fit the scaler on training pairs only to avoid val leakage.
+    train_idx, _ = split_pairs(fk_pairs, config)
+    train_fk = np.array([fk_pairs[i] for i in train_idx], dtype=np.float32)
+    scaler = TargetScaler().fit(train_fk)
+
+    # Save scaler alongside the checkpoint so evaluate.py can reload it.
+    checkpoint_dir = config["paths"]["checkpoint_dir"]
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    scaler_path = os.path.join(checkpoint_dir, f"scaler_{config['model']['name']}.npz")
+    scaler.save(scaler_path)
+    print(f"Target scaler saved -> {scaler_path}")
+    print(f"  f: [{scaler.min_[0]:.4f}, {scaler.min_[0]+scaler.scale_[0]:.4f}]  "
+          f"k: [{scaler.min_[1]:.4f}, {scaler.min_[1]+scaler.scale_[1]:.4f}]")
+
+    train_dataset, val_dataset = build_train_val_datasets(fk_pairs, config, scaler=scaler)
     print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
 
     _, checkpoint_path = train(config, train_dataset, val_dataset)

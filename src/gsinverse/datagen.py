@@ -43,7 +43,7 @@ def cache_key(config: dict, fk_pairs: List[Tuple[float, float]]) -> str:
             "patch_prob": sim_cfg["patch_prob"],
         },
         "seeds_per_param": config["data"]["seeds_per_param"],
-        "fk_pairs": [list(p) for p in fk_pairs],
+        "fk_pairs": [[float(f), float(k)] for f, k in fk_pairs],
     }
     blob = json.dumps(payload, sort_keys=True).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()[:16]

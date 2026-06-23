@@ -7,6 +7,10 @@ down to 2-D (`f, k`), since `du`/`dv` are fixed constants in this project:
 2. :func:`inspect_random_prediction` -- single-sample inference check.
 3. :func:`inspect_ground_truth_simulation` -- simulator sanity check.
 4. :func:`compare_simulations` -- 3-way shared-seed comparison.
+
+All routines accept an optional ``scaler`` argument. When provided, model
+outputs and dataset targets are inverse-transformed back to original physical
+units before metrics are computed and parameters are displayed.
 """
 
 import random
@@ -19,8 +23,16 @@ from sklearn.metrics import mean_absolute_error, r2_score
 from torch.utils.data import DataLoader, Dataset
 
 from .simulator import simulate_gray_scott
+from .utils import TargetScaler
 
 PARAM_NAMES = ["f", "k"]
+
+
+def _to_original(arr: np.ndarray, scaler: Optional[TargetScaler]) -> np.ndarray:
+    """Inverse-transform ``arr`` if a scaler is provided, else return as-is."""
+    if scaler is not None:
+        return scaler.inverse_transform(arr)
+    return arr
 
 
 @torch.no_grad()
@@ -28,22 +40,28 @@ def evaluate_and_plot(
     model: torch.nn.Module,
     val_dataset: Dataset,
     device: torch.device,
+    scaler: Optional[TargetScaler] = None,
     batch_size: int = 32,
     save_path: Optional[str] = None,
 ) -> dict:
     """Compute MAE/R2 for `f` and `k` and plot predicted-vs-true scatter plots.
 
+    Predictions and targets are inverse-transformed to original physical units
+    before metrics are computed, so MAE is in the same units as ``f`` and ``k``.
+
     Args:
         model: Trained regressor.
-        val_dataset: Validation dataset.
+        val_dataset: Validation dataset (targets may be scaled).
         device: Device to run inference on.
+        scaler: Optional :class:`~gsinverse.utils.TargetScaler` used during
+            training. When provided, outputs are inverse-transformed before
+            plotting and metric computation.
         batch_size: Batch size for inference.
-        save_path: If given, save the figure to this path instead of (only)
-            returning it.
+        save_path: If given, save the figure to this path.
 
     Returns:
         A dict with keys ``mae`` and ``r2``, each mapping ``"f"``/``"k"`` to
-        their respective metric values.
+        their respective metric values in original units.
     """
     model.eval()
     loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -55,8 +73,8 @@ def evaluate_and_plot(
         all_preds.append(preds)
         all_targets.append(targets.numpy())
 
-    preds = np.concatenate(all_preds, axis=0)
-    targets = np.concatenate(all_targets, axis=0)
+    preds = _to_original(np.concatenate(all_preds, axis=0), scaler)
+    targets = _to_original(np.concatenate(all_targets, axis=0), scaler)
 
     metrics = {"mae": {}, "r2": {}}
     fig, axes = plt.subplots(1, 2, figsize=(10, 5))
@@ -75,7 +93,7 @@ def evaluate_and_plot(
         ax.set_xlabel(f"True {name}")
         ax.set_ylabel(f"Predicted {name}")
         ax.set_title(
-            f"{name}: MAE={metrics['mae'][name]:.4f}, R2={metrics['r2'][name]:.4f}"
+            f"{name}: MAE={metrics['mae'][name]:.5f}, R2={metrics['r2'][name]:.4f}"
         )
         ax.legend()
 
@@ -93,23 +111,24 @@ def inspect_random_prediction(
     val_dataset: Dataset,
     config: dict,
     device: torch.device,
+    scaler: Optional[TargetScaler] = None,
     save_path: Optional[str] = None,
 ) -> dict:
     """Run the model on a random validation sample and re-simulate the prediction.
 
     Displays the real V-channel (from the dataset sample) next to the
-    V-channel of a fresh simulation run with the model's predicted
-    ``(f, k)``.
+    V-channel of a fresh simulation run with the model's predicted ``(f, k)``.
 
     Args:
         model: Trained regressor.
         val_dataset: Validation dataset.
         config: Full configuration dict.
         device: Device to run inference on.
+        scaler: Optional scaler to inverse-transform predictions and targets.
         save_path: If given, save the figure to this path.
 
     Returns:
-        A dict with keys ``true_fk`` and ``pred_fk``.
+        A dict with keys ``true_fk`` and ``pred_fk`` in original units.
     """
     model.eval()
     sim_cfg = config["simulator"]
@@ -117,8 +136,12 @@ def inspect_random_prediction(
     idx = random.randrange(len(val_dataset))
     image, target = val_dataset[idx]
 
-    pred = model(image.unsqueeze(0).to(device)).cpu().numpy()[0]
+    pred = model(image.unsqueeze(0).to(device)).cpu().numpy()
+    pred = _to_original(pred, scaler)[0]
+    target_orig = _to_original(target.numpy()[None], scaler)[0]
+
     pred_f, pred_k = (max(0.0, float(v)) for v in pred)
+    true_f, true_k = float(target_orig[0]), float(target_orig[1])
 
     seed = random.randint(0, 2**31 - 1)
     _, v_pred, _, _ = simulate_gray_scott(
@@ -135,13 +158,13 @@ def inspect_random_prediction(
         return_initial=True,
     )
 
-    real_v = image[1].numpy()  # V_final channel from the dataset sample
+    real_v = image[1].numpy()
 
     fig, axes = plt.subplots(1, 2, figsize=(8, 4))
     axes[0].imshow(real_v, cmap="viridis")
-    axes[0].set_title(f"Real V (true f={target[0]:.3f}, k={target[1]:.3f})")
+    axes[0].set_title(f"Real V (true f={true_f:.4f}, k={true_k:.4f})")
     axes[1].imshow(v_pred.numpy(), cmap="viridis")
-    axes[1].set_title(f"Predicted V (pred f={pred_f:.3f}, k={pred_k:.3f})")
+    axes[1].set_title(f"Predicted V (pred f={pred_f:.4f}, k={pred_k:.4f})")
     for ax in axes:
         ax.axis("off")
 
@@ -150,12 +173,13 @@ def inspect_random_prediction(
         fig.savefig(save_path)
     plt.close(fig)
 
-    return {"true_fk": (float(target[0]), float(target[1])), "pred_fk": (pred_f, pred_k)}
+    return {"true_fk": (true_f, true_k), "pred_fk": (pred_f, pred_k)}
 
 
 def inspect_ground_truth_simulation(
     val_dataset: Dataset,
     config: dict,
+    scaler: Optional[TargetScaler] = None,
     idx: Optional[int] = None,
     save_path: Optional[str] = None,
 ) -> dict:
@@ -168,18 +192,20 @@ def inspect_ground_truth_simulation(
     Args:
         val_dataset: Validation dataset.
         config: Full configuration dict.
+        scaler: Optional scaler to inverse-transform targets to original units.
         idx: Index of the sample to inspect. If ``None``, a random index is used.
         save_path: If given, save the figure to this path.
 
     Returns:
-        A dict with key ``fk`` giving the ``(f, k)`` pair used.
+        A dict with key ``fk`` giving the ``(f, k)`` pair used in original units.
     """
     sim_cfg = config["simulator"]
 
     if idx is None:
         idx = random.randrange(len(val_dataset))
     image, target = val_dataset[idx]
-    f, k = float(target[0]), float(target[1])
+    target_orig = _to_original(target.numpy()[None], scaler)[0]
+    f, k = float(target_orig[0]), float(target_orig[1])
 
     seed = random.randint(0, 2**31 - 1)
     _, v_sim, _, _ = simulate_gray_scott(
@@ -200,7 +226,7 @@ def inspect_ground_truth_simulation(
 
     fig, axes = plt.subplots(1, 2, figsize=(8, 4))
     axes[0].imshow(dataset_v, cmap="viridis")
-    axes[0].set_title(f"Dataset V (f={f:.3f}, k={k:.3f})")
+    axes[0].set_title(f"Dataset V (f={f:.4f}, k={k:.4f})")
     axes[1].imshow(v_sim.numpy(), cmap="viridis")
     axes[1].set_title("Fresh simulation V (same f, k)")
     for ax in axes:
@@ -220,6 +246,7 @@ def compare_simulations(
     val_dataset: Dataset,
     config: dict,
     device: torch.device,
+    scaler: Optional[TargetScaler] = None,
     idx: Optional[int] = None,
     save_path: Optional[str] = None,
 ) -> dict:
@@ -236,11 +263,12 @@ def compare_simulations(
         val_dataset: Validation dataset.
         config: Full configuration dict.
         device: Device to run inference on.
+        scaler: Optional scaler to inverse-transform predictions and targets.
         idx: Index of the sample to inspect. If ``None``, a random index is used.
         save_path: If given, save the figure to this path.
 
     Returns:
-        A dict with keys ``true_fk`` and ``pred_fk``.
+        A dict with keys ``true_fk`` and ``pred_fk`` in original units.
     """
     model.eval()
     sim_cfg = config["simulator"]
@@ -248,9 +276,11 @@ def compare_simulations(
     if idx is None:
         idx = random.randrange(len(val_dataset))
     image, target = val_dataset[idx]
-    true_f, true_k = float(target[0]), float(target[1])
+    target_orig = _to_original(target.numpy()[None], scaler)[0]
+    true_f, true_k = float(target_orig[0]), float(target_orig[1])
 
-    pred = model(image.unsqueeze(0).to(device)).cpu().numpy()[0]
+    pred = model(image.unsqueeze(0).to(device)).cpu().numpy()
+    pred = _to_original(pred, scaler)[0]
     pred_f, pred_k = (max(0.0, float(v)) for v in pred)
 
     shared_seed = random.randint(0, 2**31 - 1)
@@ -277,11 +307,11 @@ def compare_simulations(
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
     axes[0].imshow(dataset_v, cmap="viridis")
-    axes[0].set_title(f"Dataset V\n(f={true_f:.3f}, k={true_k:.3f})")
+    axes[0].set_title(f"Dataset V\n(f={true_f:.4f}, k={true_k:.4f})")
     axes[1].imshow(v_true, cmap="viridis")
-    axes[1].set_title(f"Simulated, true params\n(f={true_f:.3f}, k={true_k:.3f})")
+    axes[1].set_title(f"Simulated, true params\n(f={true_f:.4f}, k={true_k:.4f})")
     axes[2].imshow(v_pred, cmap="viridis")
-    axes[2].set_title(f"Simulated, predicted params\n(f={pred_f:.3f}, k={pred_k:.3f})")
+    axes[2].set_title(f"Simulated, predicted params\n(f={pred_f:.4f}, k={pred_k:.4f})")
     for ax in axes:
         ax.axis("off")
 

@@ -21,7 +21,7 @@ from gsinverse.evaluate import (
     inspect_random_prediction,
 )
 from gsinverse.models import build_model
-from gsinverse.utils import get_device, load_config, set_global_seed
+from gsinverse.utils import TargetScaler, get_device, load_config, set_global_seed
 
 
 def main():
@@ -34,6 +34,11 @@ def main():
     )
     parser.add_argument("--checkpoint", required=True, help="Path to a trained checkpoint (.pt)")
     parser.add_argument(
+        "--scaler",
+        default=None,
+        help="Path to scaler .npz file. Defaults to scaler_<model>.npz next to the checkpoint.",
+    )
+    parser.add_argument(
         "--output-dir", default="checkpoints/eval", help="Directory to save evaluation plots"
     )
     parser.add_argument(
@@ -45,29 +50,42 @@ def main():
     set_global_seed(config["seed"])
     os.makedirs(args.output_dir, exist_ok=True)
 
+    # Load scaler — default path mirrors what train.py saves.
+    scaler_path = args.scaler or os.path.join(
+        os.path.dirname(args.checkpoint),
+        f"scaler_{config['model']['name']}.npz",
+    )
+    scaler = None
+    if os.path.exists(scaler_path):
+        scaler = TargetScaler.load(scaler_path)
+        print(f"Loaded target scaler from {scaler_path}")
+    else:
+        print(f"No scaler found at {scaler_path} — metrics will be in scaled space.")
+
     device = get_device()
     model = build_model(config).to(device)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
     model.eval()
 
     fk_pairs = [tuple(p) for p in np.load(args.fk_pairs)]
-    _, val_dataset = build_train_val_datasets(fk_pairs, config, show_progress=False)
+    _, val_dataset = build_train_val_datasets(fk_pairs, config, scaler=scaler, show_progress=False)
 
     metrics = evaluate_and_plot(
-        model, val_dataset, device, save_path=os.path.join(args.output_dir, "metrics.png")
+        model, val_dataset, device, scaler=scaler,
+        save_path=os.path.join(args.output_dir, "metrics.png"),
     )
     print("Validation metrics:", metrics)
 
     inspect_random_prediction(
-        model, val_dataset, config, device,
+        model, val_dataset, config, device, scaler=scaler,
         save_path=os.path.join(args.output_dir, "random_prediction.png"),
     )
     inspect_ground_truth_simulation(
-        val_dataset, config,
+        val_dataset, config, scaler=scaler,
         save_path=os.path.join(args.output_dir, "ground_truth_simulation.png"),
     )
     compare_simulations(
-        model, val_dataset, config, device,
+        model, val_dataset, config, device, scaler=scaler,
         save_path=os.path.join(args.output_dir, "compare_simulations.png"),
     )
 
