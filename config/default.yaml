@@ -55,10 +55,10 @@ seed: 42
 grid:
   f_min: 0.02
   f_max: 0.09
-  f_steps: 40
+  f_steps: 60
   k_min: 0.05
   k_max: 0.08
-  k_steps: 40
+  k_steps: 60
   output: "data/fk_pairs_grid.npy"
   convergence:
     iterations: 2000       # steps before stability snapshot
