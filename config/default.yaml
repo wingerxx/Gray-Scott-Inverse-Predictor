@@ -30,7 +30,7 @@ model:
   # CNN only: timm backbone name (e.g. "resnet18", "resnet34", "efficientnet_b0")
   backbone: "resnet18"
   # Head dropout probability (0.0 = disabled)
-  dropout: 0.0
+  dropout: 0.3
 
 # Training
 train:
@@ -54,11 +54,11 @@ seed: 42
 # Used by scripts/generate_grid_pairs.py to build a diverse training set.
 grid:
   f_min: 0.02
-  f_max: 0.08
-  f_steps: 50
-  k_min: 0.04
-  k_max: 0.07
-  k_steps: 50
+  f_max: 0.09
+  f_steps: 40
+  k_min: 0.05
+  k_max: 0.08
+  k_steps: 40
   output: "data/fk_pairs_grid.npy"
   convergence:
     iterations: 2000       # steps before stability snapshot
