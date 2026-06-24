@@ -1,15 +1,17 @@
 """Build and cache the (image, [f, k]) training dataset.
 
-For each ``(f, k)`` pair drawn from the source HDF5 dataset, this module
-runs the forward simulator (with fresh random seeds) to produce one or more
-``(3, 64, 64)`` model-input tensors, and caches the resulting arrays to disk
-so training does not need to re-simulate every epoch.
+For each ``(f, k)`` pair, this module runs the forward simulator with
+deterministic seeds to produce one or more ``(3, 64, 64)`` model-input
+tensors, and caches the resulting arrays to disk so training does not need
+to re-simulate every epoch.
+
+Seeds are assigned deterministically as ``pair_index * seeds_per_param + s``
+so the cache key fully determines reproducibility — no global RNG state needed.
 """
 
 import hashlib
 import json
 import os
-import random
 from typing import List, Tuple
 
 import numpy as np
@@ -110,28 +112,32 @@ def build_dataset(
     """
     seeds_per_param = config["data"]["seeds_per_param"]
 
-    images = []
-    targets = []
-    pair_idx = []
+    n_pairs = len(fk_pairs)
+    n_samples = n_pairs * seeds_per_param
+    size = config["simulator"]["size"]
 
-    iterator = range(len(fk_pairs))
+    images = np.empty((n_samples, 3, size, size), dtype=np.float32)
+    targets = np.empty((n_samples, 2), dtype=np.float32)
+    pair_idx = np.empty(n_samples, dtype=np.int64)
+
+    iterator = range(n_pairs)
     if show_progress:
         from tqdm import tqdm
-
         iterator = tqdm(iterator, desc="Generating dataset")
 
     for i in iterator:
         f, k = fk_pairs[i]
-        for _ in range(seeds_per_param):
-            seed = random.randint(0, 2**31 - 1)
-            images.append(generate_sample(f, k, config, seed))
-            targets.append([f, k])
-            pair_idx.append(i)
+        for s in range(seeds_per_param):
+            seed = i * seeds_per_param + s
+            out = i * seeds_per_param + s
+            images[out] = generate_sample(f, k, config, seed)
+            targets[out] = [f, k]
+            pair_idx[out] = i
 
     return {
-        "images": np.stack(images, axis=0),
-        "targets": np.array(targets, dtype=np.float32),
-        "pair_idx": np.array(pair_idx, dtype=np.int64),
+        "images": images,
+        "targets": targets,
+        "pair_idx": pair_idx,
     }
 
 
@@ -166,5 +172,44 @@ def generate_and_cache(
         targets=data["targets"],
         pair_idx=data["pair_idx"],
         fk_pairs=fk_array,
+    )
+    return cache_path
+
+
+def save_pregenerated_cache(
+    fk_pairs: List[Tuple[float, float]],
+    images: np.ndarray,
+    targets: np.ndarray,
+    pair_idx: np.ndarray,
+    config: dict,
+) -> str:
+    """Save pre-generated images directly to the standard cache format.
+
+    Used by ``scripts/generate_grid_pairs.py`` to persist the images
+    collected during convergence checking, so ``generate_dataset.py``
+    can be skipped entirely.
+
+    Args:
+        fk_pairs: Converged ``(f, k)`` pairs.
+        images: ``(N, 3, H, W)`` float32 array of training images.
+        targets: ``(N, 2)`` float32 array of ``[f, k]`` targets.
+        pair_idx: ``(N,)`` int64 array mapping each sample to its pair.
+        config: Full configuration dict (used for cache dir and key).
+
+    Returns:
+        Path to the saved ``.npz`` cache file.
+    """
+    cache_dir = config["paths"]["cache_dir"]
+    os.makedirs(cache_dir, exist_ok=True)
+
+    key = cache_key(config, fk_pairs)
+    cache_path = os.path.join(cache_dir, f"dataset_{key}.npz")
+
+    np.savez_compressed(
+        cache_path,
+        images=images,
+        targets=targets,
+        pair_idx=pair_idx,
+        fk_pairs=np.array(fk_pairs, dtype=np.float32),
     )
     return cache_path

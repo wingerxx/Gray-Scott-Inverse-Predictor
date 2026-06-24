@@ -2,9 +2,7 @@
 """Load a trained checkpoint and run the validation routines.
 
 Usage:
-    python scripts/evaluate.py --config config/default.yaml \\
-        --fk-pairs data/fk_pairs.npy \\
-        --checkpoint checkpoints/best_cnn.pt
+    python scripts/evaluate.py --checkpoint checkpoints/best_cnn.pt
 """
 
 import argparse
@@ -15,10 +13,8 @@ import torch
 
 from gsinverse.dataset import build_train_val_datasets
 from gsinverse.evaluate import (
-    compare_simulations,
     evaluate_and_plot,
-    inspect_ground_truth_simulation,
-    inspect_random_prediction,
+    sample_predictions,
 )
 from gsinverse.models import build_model
 from gsinverse.utils import TargetScaler, get_device, load_config, set_global_seed
@@ -29,8 +25,8 @@ def main():
     parser.add_argument("--config", default="config/default.yaml", help="Path to config YAML")
     parser.add_argument(
         "--fk-pairs",
-        default="data/fk_pairs.npy",
-        help="Path to the (f, k) pairs produced by extract_params.py",
+        default="data/fk_pairs_grid.npy",
+        help="Path to the (f, k) pairs .npy file",
     )
     parser.add_argument("--checkpoint", required=True, help="Path to a trained checkpoint (.pt)")
     parser.add_argument(
@@ -76,17 +72,9 @@ def main():
     )
     print("Validation metrics:", metrics)
 
-    inspect_random_prediction(
+    sample_predictions(
         model, val_dataset, config, device, scaler=scaler,
-        save_path=os.path.join(args.output_dir, "random_prediction.png"),
-    )
-    inspect_ground_truth_simulation(
-        val_dataset, config, scaler=scaler,
-        save_path=os.path.join(args.output_dir, "ground_truth_simulation.png"),
-    )
-    compare_simulations(
-        model, val_dataset, config, device, scaler=scaler,
-        save_path=os.path.join(args.output_dir, "compare_simulations.png"),
+        save_path=os.path.join(args.output_dir, "sample_predictions.png"),
     )
 
     print(f"Evaluation plots saved -> {args.output_dir}")

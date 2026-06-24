@@ -3,7 +3,6 @@
 # in the scripts under scripts/.
 
 paths:
-  hdf5_path: "data/grayscott_64x64_1-1000.hdf5"
   cache_dir: "data/cache"
   checkpoint_dir: "checkpoints"
 
@@ -12,17 +11,15 @@ simulator:
   du: 0.16
   dv: 0.08
   size: 64
-  iterations: 1000
+  iterations: 2000
   patch_radius: 2
   patch_prob: 0.5
 
 # Dataset generation
 data:
-  seeds_per_param: 5
+  seeds_per_param: 3
   val_fraction: 0.2
   split_seed: 42
-  # If true, regenerate samples on-the-fly each epoch instead of using the cache.
-  on_the_fly: false
 
 # Model
 model:
@@ -30,6 +27,10 @@ model:
   name: "cnn"
   in_chans: 3
   num_outputs: 2
+  # CNN only: timm backbone name (e.g. "resnet18", "resnet34", "efficientnet_b0")
+  backbone: "resnet18"
+  # Head dropout probability (0.0 = disabled)
+  dropout: 0.0
 
 # Training
 train:
@@ -39,10 +40,32 @@ train:
   weight_decay: 1.0e-4
   num_workers: 2
   log_csv: "checkpoints/train_log.csv"
+  # HuberLoss delta: smaller values (e.g. 0.1) give finer sensitivity on [0,1]
+  # scaled targets; the default of 1.0 is too wide for this problem.
+  huber_delta: 0.1
+  # Stop training if val loss doesn't improve for this many epochs (null = disabled)
+  early_stopping_patience: null
 
 # Global RNG seed (for split, model init, etc. -- distinct from per-sample
 # simulation seeds which are drawn randomly during dataset generation).
 seed: 42
+
+# Grid-based (f, k) pair generation
+# Used by scripts/generate_grid_pairs.py to build a diverse training set.
+grid:
+  f_min: 0.02
+  f_max: 0.08
+  f_steps: 50
+  k_min: 0.04
+  k_max: 0.07
+  k_steps: 50
+  output: "data/fk_pairs_grid.npy"
+  convergence:
+    iterations: 2000       # steps before stability snapshot
+    stability_steps: 200   # extra steps to measure drift
+    n_seeds: 3             # seeds that must pass for a pair to be accepted
+    min_variance: 0.005    # V-field variance threshold (below = dead/uniform)
+    max_stability: 0.005   # mean abs change threshold (above = still evolving)
 
 # Weights & Biases experiment tracking
 wandb:

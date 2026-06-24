@@ -18,6 +18,7 @@ class CNNRegressor(nn.Module):
         num_outputs: int = 2,
         backbone: str = "resnet18",
         pretrained: bool = False,
+        dropout: float = 0.0,
     ):
         super().__init__()
         self.backbone = timm.create_model(
@@ -32,6 +33,7 @@ class CNNRegressor(nn.Module):
         self.head = nn.Sequential(
             nn.Linear(feat_dim, 128),
             nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
             nn.Linear(128, num_outputs),
         )
 

@@ -34,8 +34,7 @@ def _run_epoch(
     total_loss = 0.0
     total_samples = 0
 
-    context = torch.enable_grad() if is_train else torch.no_grad()
-    with context:
+    with torch.set_grad_enabled(is_train):
         for images, targets in loader:
             images = images.to(device)
             targets = targets.to(device)
@@ -90,7 +89,8 @@ def train(
         num_workers=train_cfg.get("num_workers", 0),
     )
 
-    criterion = nn.HuberLoss()
+    huber_delta = train_cfg.get("huber_delta", 0.1)
+    criterion = nn.HuberLoss(delta=huber_delta)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=train_cfg["lr"],
@@ -122,6 +122,8 @@ def train(
         )
 
     best_val_loss = float("inf")
+    early_stop_patience = train_cfg.get("early_stopping_patience", None)
+    epochs_without_improvement = 0
 
     try:
         for epoch in range(1, epochs + 1):
@@ -143,7 +145,13 @@ def train(
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
+                epochs_without_improvement = 0
                 torch.save(model.state_dict(), checkpoint_path)
+            else:
+                epochs_without_improvement += 1
+                if early_stop_patience and epochs_without_improvement >= early_stop_patience:
+                    print(f"Early stopping at epoch {epoch} (no improvement for {early_stop_patience} epochs)")
+                    break
 
         if wandb_run is not None:
             wandb_run.log({"best_val_loss": best_val_loss})

@@ -1,5 +1,10 @@
 """Shared helpers: device selection, normalization, seeding, and config loading."""
 
+# Approximate maximum V value in Gray-Scott initial conditions.
+# Patch cells are set to 0.25; noise adds up to 0.05 → max ≈ 0.30.
+# Used to invert the per-sample min-max normalization of V_init.
+V_INIT_MAX = 0.30
+
 import random
 from typing import Any, Dict, List
 
@@ -64,6 +69,7 @@ class TargetScaler:
             targets: Array of shape ``(N, D)`` where D is the number of targets.
             eps: Added to range to avoid division by zero for constant columns.
         """
+        assert targets.ndim == 2, f"Expected (N, D) array, got shape {targets.shape}"
         self.min_ = targets.min(axis=0).astype(np.float32)
         self.scale_ = (targets.max(axis=0) - self.min_ + eps).astype(np.float32)
         return self

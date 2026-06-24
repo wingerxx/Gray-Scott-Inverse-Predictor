@@ -18,6 +18,9 @@ _LAPLACIAN_KERNEL = [
     [0.05, 0.20, 0.05],
 ]
 
+# Pre-built float32 kernel tensor (device-agnostic); moved to device inside sim calls.
+_KERNEL = torch.tensor(_LAPLACIAN_KERNEL, dtype=torch.float32).view(1, 1, 3, 3)
+
 
 def create_initial_fields(
     grid_length: int,
@@ -81,6 +84,8 @@ def simulate_gray_scott(
     seed: Optional[int] = None,
     device: str = "cpu",
     return_initial: bool = False,
+    u0: Optional[torch.Tensor] = None,
+    v0: Optional[torch.Tensor] = None,
 ):
     """Run a Gray-Scott reaction-diffusion simulation.
 
@@ -105,15 +110,17 @@ def simulate_gray_scott(
         ``(u, v, u_initial, v_initial)`` where the initial fields are also
         ``(size, size)`` arrays.
     """
-    u, v = create_initial_fields(size, patch_radius, patch_prob, seed=seed, device=device)
+    if u0 is not None and v0 is not None:
+        u = u0.to(device)
+        v = v0.to(device)
+    else:
+        u, v = create_initial_fields(size, patch_radius, patch_prob, seed=seed, device=device)
 
     if return_initial:
         u_initial = u.clone().squeeze()
         v_initial = v.clone().squeeze()
 
-    kernel = torch.tensor(
-        _LAPLACIAN_KERNEL, dtype=u.dtype, device=device
-    ).view(1, 1, 3, 3)
+    kernel = _KERNEL.to(device=device, dtype=u.dtype)
 
     dt = 1.0
     for _ in range(iterations):
@@ -134,3 +141,74 @@ def simulate_gray_scott(
     if return_initial:
         return u_final, v_final, u_initial, v_initial
     return u_final, v_final
+
+
+def simulate_gray_scott_two_phase(
+    du: float,
+    dv: float,
+    f: float,
+    k: float,
+    iterations: int = 2000,
+    stability_steps: int = 200,
+    size: int = 64,
+    patch_radius: int = 2,
+    patch_prob: float = 0.5,
+    seed: Optional[int] = None,
+    device: str = "cpu",
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Run a two-phase simulation to support convergence checking.
+
+    Runs for ``iterations`` steps, captures V at that point (the
+    ``snapshot``), then runs ``stability_steps`` more. Returns the
+    final V field, the snapshot V field, and the final V field again so
+    callers can compare snapshot vs final to assess stability.
+
+    Args:
+        du: Diffusion rate for U.
+        dv: Diffusion rate for V.
+        f: Feed rate.
+        k: Kill rate.
+        iterations: Number of steps before the stability snapshot.
+        stability_steps: Additional steps run after the snapshot.
+        size: Side length of the simulation grid.
+        patch_radius: Radius of seeded initial patches.
+        patch_prob: Probability of seeding a patch at each candidate site.
+        seed: Optional RNG seed for the initial conditions.
+        device: Torch device on which to run the simulation.
+
+    Returns:
+        A tuple ``(u_snapshot, v_snapshot, v_final, v_initial)`` of
+        ``(size, size)`` tensors, where the snapshot fields are captured
+        after ``iterations`` steps and ``v_final`` is after
+        ``iterations + stability_steps`` steps. ``v_initial`` is the V
+        field at t=0, before any stepping occurs.
+    """
+    u, v = create_initial_fields(size, patch_radius, patch_prob, seed=seed, device=device)
+
+    v_initial = v.squeeze().clone()
+
+    kernel = _KERNEL.to(device=device, dtype=u.dtype)
+
+    dt = 1.0
+
+    def _step(u, v):
+        u_pad = F.pad(u, (1, 1, 1, 1), mode="circular")
+        v_pad = F.pad(v, (1, 1, 1, 1), mode="circular")
+        lap_u = F.conv2d(u_pad, kernel)
+        lap_v = F.conv2d(v_pad, kernel)
+        uvv = u * v * v
+        u = u + dt * (du * lap_u - uvv + f * (1 - u))
+        v = v + dt * (dv * lap_v + uvv - (f + k) * v)
+        return u, v
+
+    for _ in range(iterations):
+        u, v = _step(u, v)
+
+    u_snapshot = u.squeeze().clone()
+    v_snapshot = v.squeeze().clone()
+
+    for _ in range(stability_steps):
+        u, v = _step(u, v)
+
+    v_final = v.squeeze()
+    return u_snapshot, v_snapshot, v_final, v_initial
