@@ -122,6 +122,7 @@ def train(
         )
 
     best_val_loss = float("inf")
+    checkpoint_saved = False
     early_stop_patience = train_cfg.get("early_stopping_patience", None)
     epochs_without_improvement = 0
 
@@ -147,18 +148,22 @@ def train(
                 best_val_loss = val_loss
                 epochs_without_improvement = 0
                 torch.save(model.state_dict(), checkpoint_path)
+                checkpoint_saved = True
             else:
                 epochs_without_improvement += 1
                 if early_stop_patience and epochs_without_improvement >= early_stop_patience:
                     print(f"Early stopping at epoch {epoch} (no improvement for {early_stop_patience} epochs)")
                     break
 
-        if wandb_run is not None:
+        if wandb_run is not None and checkpoint_saved:
             wandb_run.log({"best_val_loss": best_val_loss})
             wandb_run.save(checkpoint_path)
     finally:
         if wandb_run is not None:
             wandb_run.finish()
 
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    if checkpoint_saved:
+        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    else:
+        print("No checkpoint was saved (no epochs ran); returning the in-memory model.")
     return model, checkpoint_path

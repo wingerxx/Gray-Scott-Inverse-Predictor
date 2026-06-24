@@ -136,7 +136,10 @@ def sample_predictions(
     indices = random.sample(range(len(val_dataset)), min(n, len(val_dataset)))
     results = []
 
+    n = len(indices)
     fig, axes = plt.subplots(n, 3, figsize=(12, 4 * n))
+    # plt.subplots collapses to a 1-D array when n == 1; force 2-D indexing.
+    axes = np.atleast_2d(axes)
     col_titles = ["V_init", "Dataset V", "Simulated, predicted params"]
     for col, title in enumerate(col_titles):
         axes[0, col].set_title(title, fontsize=11, fontweight="bold")

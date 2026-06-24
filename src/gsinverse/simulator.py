@@ -155,13 +155,14 @@ def simulate_gray_scott_two_phase(
     patch_prob: float = 0.5,
     seed: Optional[int] = None,
     device: str = "cpu",
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run a two-phase simulation to support convergence checking.
 
-    Runs for ``iterations`` steps, captures V at that point (the
-    ``snapshot``), then runs ``stability_steps`` more. Returns the
-    final V field, the snapshot V field, and the final V field again so
-    callers can compare snapshot vs final to assess stability.
+    Runs for ``iterations`` steps, captures the U and V fields at that point
+    (the ``snapshot``), then runs ``stability_steps`` more. Returns the U and
+    V snapshots, the final V field, and the initial V field, so callers can
+    compare snapshot vs final to assess stability and reuse the fields as
+    training samples.
 
     Args:
         du: Diffusion rate for U.

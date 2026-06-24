@@ -69,14 +69,13 @@ def build_train_val_datasets(
     """Build the train and validation datasets, split by ``(f, k)`` pair.
 
     Args:
-        fk_pairs: List of ``(f, k)`` pairs (e.g. from
-            :func:`gsinverse.params.extract_fk_pairs`).
+        fk_pairs: List of ``(f, k)`` pairs (e.g. the converged pairs produced
+            by ``scripts/generate_grid_pairs.py``).
         config: Full configuration dict.
         scaler: Optional :class:`~gsinverse.utils.TargetScaler`. When provided,
             targets are scaled before being returned by ``__getitem__``. Fit
             the scaler on training targets before passing it here.
-        show_progress: If ``True``, show a progress bar during cache generation
-            (only used when ``data.on_the_fly`` is ``False``).
+        show_progress: If ``True``, show a progress bar during cache generation.
 
     Returns:
         A tuple ``(train_dataset, val_dataset)``.

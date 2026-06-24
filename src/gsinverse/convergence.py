@@ -24,7 +24,7 @@ from .utils import normalize_minmax
 
 # Convergence criteria defaults -- exposed so callers can override.
 DEFAULT_MIN_VARIANCE = 0.005
-DEFAULT_MAX_STABILITY = 0.001
+DEFAULT_MAX_STABILITY = 0.005
 
 
 def _build_sample(

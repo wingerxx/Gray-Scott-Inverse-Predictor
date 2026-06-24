@@ -3,7 +3,7 @@
 
 Usage:
     python scripts/train.py --config config/default.yaml \\
-        --fk-pairs data/fk_pairs.npy
+        --fk-pairs data/fk_pairs_grid.npy
 """
 
 import argparse
@@ -21,8 +21,8 @@ def main():
     parser.add_argument("--config", default="config/default.yaml", help="Path to config YAML")
     parser.add_argument(
         "--fk-pairs",
-        default="data/fk_pairs.npy",
-        help="Path to the (f, k) pairs produced by extract_params.py",
+        default="data/fk_pairs_grid.npy",
+        help="Path to the (f, k) pairs produced by scripts/generate_grid_pairs.py",
     )
     parser.add_argument(
         "--set", dest="overrides", action="append", default=[], help="Override config: a.b.c=value"

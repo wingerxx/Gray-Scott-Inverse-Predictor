@@ -40,6 +40,7 @@ class ViTRegressor(VisionTransformer):
         self.reg_head = nn.Linear(embed_dim, num_outputs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.forward_features(x)   # (B, embed_dim) CLS token
+        x = self.forward_features(x)               # (B, num_tokens, embed_dim)
+        x = self.forward_head(x, pre_logits=True)  # (B, embed_dim) pooled CLS features
         x = self.reg_dropout(x)
         return self.reg_head(x)
